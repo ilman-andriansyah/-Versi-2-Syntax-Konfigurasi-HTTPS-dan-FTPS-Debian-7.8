@@ -1,0 +1,220 @@
+Syntax Konfigurasi HTTPS dan FTPS Debian 7.8
+
+**********************************************************************
+**********************************************************************
+Syntax Konfigurasi HTTPS
+**********************************************************************
+**********************************************************************
+
+----------------------------------------------------------------------------------------------------------------------------
+apt-get install apache2 openssl ssl-cert
+----------------------------------------------------------------------------------------------------------------------------
+mkdir /cert
+----------------------------------------------------------------------------------------------------------------------------
+cd /cert | ls
+----------------------------------------------------------------------------------------------------------------------------
+cp /etc/ssl/openssl.cnf /cert/ | ls
+----------------------------------------------------------------------------------------------------------------------------
+nano openssl.cnf [dir cert]
+----------------------------------------------------------------------------------------------------------------------------
+search :
+default_md = default ---> default_md = sha256
+policy     = policy_match ---> policy = policy_anything
+
+# For the CA policy
+[ policy_match ]
+countryName            = match ---> optional
+stateOrProvinceName    = match ---> optional
+organizationName       = match ---> optional
+organizationalUnitName = optional
+commonName             = supplied
+emailAddress           = optional
+
+##################################################
+[ req ]
+default_bits           = 2048 ---> 4096
+default_keyfile        = privkey.pem
+distinguished_name     = req_distinguished_name
+req_extensions         = v3_req
+attributes             = req_attributes
+x509_extensions = v3_ca # The Extensions to add to the self signed cert
+
+[ req_distinguished_name ]
+countryName                                     = Country Name (2 letter code)
+countryName_default                             = AU ---> ID
+countryName_min                                 = 2
+countryName_max                                 = 2
+
+stateOrProvinceName                             = State or Province Name (full name)
+stateOrProvinceName_default                             = Some-State ---> Jawa Barat
+
+localityName                                        = Locality Name (eg, city)
+
+0.organizationName                              = Organization Name (eg, company)
+0.organizationName_default                              = Internet Widgits Pty Ltd ---> Serverone
+
+[Ke arah paling bawah dari file openssl.cnf]
+
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation,digitalSignature,keyEncipherment
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = serverone.net
+DNS.2 = *.serverone.net
+IP.1 = 192.168.1.1
+
+[save]
+----------------------------------------------------------------------------------------------------------------------------
+/cert# openssl genrsa -out ca.key 4096
+----------------------------------------------------------------------------------------------------------------------------
+/cert# ls | ca.key openssl.cnf
+----------------------------------------------------------------------------------------------------------------------------
+/cert# openssl req -new -x509 -days 365 -sha256 -config openssl.cnf -key ca.key -out ca.crt
+----------------------------------------------------------------------------------------------------------------------------
+Locality Name (eg, city) []:Bandung
+Organizational Unit Name (eg, section) []:Serverone
+Common Name (e.g. server FQDN or YOUR name) []: serverone
+Email Address []:admin@serverone.net
+----------------------------------------------------------------------------------------------------------------------------
+/cert# ls | ca.crt ca.key openssl.cnf
+----------------------------------------------------------------------------------------------------------------------------
+/cert# openssl genrsa -out serverone.net.key 4096
+----------------------------------------------------------------------------------------------------------------------------
+/cert# openssl req -new -sha256 -config openssl.cnf -key serverone.net.key -out serverone.net.csr
+----------------------------------------------------------------------------------------------------------------------------
+Locality Name (eg, city) []:Bandung
+Organizational Unit Name (eg, section) []:Serverone
+Common Name (e.g. server FQDN or YOUR name) []: serverone.net
+Email Address []:admin@serverone.net
+
+A challenge password []: [enter]
+An optional company name []: [enter]
+----------------------------------------------------------------------------------------------------------------------------
+/cert# ls | ca.crt ca.key serverone.net.csr serverone.net.key openssl.cnf
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+/cert# openssl x509 -req -days 365 -sha256 -in serverone.net.csr -CA ca.crt -CAkey ca.key -set_serial 01 -out serverone.net.crt -extensions v3_req -extfile openssl.cnf
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+/cert# openssl pkcs12 -export -sha256 -in serverone.net.crt -inkey serverone.net.key -out serverone.net.p12
+----------------------------------------------------------------------------------------------------------------------------
+/cert# openssl pkcs12 -export -in serverone.net.crt -inkey serverone.net.key -out serverone.net.p12
+----------------------------------------------------------------------------------------------------------------------------
+Enter Export Password : WEB2024
+----------------------------------------------------------------------------------------------------------------------------
+/cert# ls | ca.crt ca.key serverone.net.crt serverone.net.csr serverone.net.key serverone.net.p12 openssl.cnf
+----------------------------------------------------------------------------------------------------------------------------
+nano /etc/apache2/sites-available/default
+----------------------------------------------------------------------------------------------------------------------------
+ServerName www.serverone.net
+Redirect / https://www.serverone.net
+
+----------------------------------------------------------------------------------------------------------------------------
+/etc/apache2/sites-available# cp default https
+----------------------------------------------------------------------------------------------------------------------------
+/etc/apache2/sites-available# nano https
+----------------------------------------------------------------------------------------------------------------------------
+
+        ServerAdmin webmaster@serverone.net
+        ServerName www.serverone.net
+
+        SSLEngine On
+        SSLCertificateFile /cert/serverone.net.crt
+        SSLCertificateKeyFile /cert/serverone.net.key
+
+----------------------------------------------------------------------------------------------------------------------------
+/etc/apache2/sites-available# a2ensite https
+----------------------------------------------------------------------------------------------------------------------------
+/etc/apache2/sites-available# a2enmod ssl
+----------------------------------------------------------------------------------------------------------------------------
+/etc/apache2# nano ports.conf
+----------------------------------------------------------------------------------------------------------------------------
+NameVirtualHost *:80
+NameVirtualHost *:443
+Listen 80
+
+[save]
+----------------------------------------------------------------------------------------------------------------------------
+service apache2 restart
+----------------------------------------------------------------------------------------------------------------------------
+Buka Google --> Settings --> Manage Certificates
+
+Trusted Root Certification Authorities --> Import ca.crt
+
+Personal --> Import serverone.net.p12 --> WEB2024
+----------------------------------------------------------------------------------------------------------------------------
+https://www.serverone.net
+----------------------------------------------------------------------------------------------------------------------------
+
+**********************************************************************
+**********************************************************************
+Syntax Konfigurasi FTPS
+**********************************************************************
+**********************************************************************
+
+----------------------------------------------------------------------------------------------------------------------------
+apt-get install proftpd-basic -y
+----------------------------------------------------------------------------------------------------------------------------
+OK - Standalone
+----------------------------------------------------------------------------------------------------------------------------
+nano /etc/proftpd/proftpd.conf
+----------------------------------------------------------------------------------------------------------------------------
+Search :
+ServerName  [Debian] ---> [ftp.serverone.net]
+Hilangkan tanda [#] pada DefaultRoot
+Port 21 menjadi 990
+Hilangkan tanda [#] pada Include /etc/proftpd/tls.conf
+
+[save]
+----------------------------------------------------------------------------------------------------------------------------
+nano /etc/proftpd/tls.conf
+----------------------------------------------------------------------------------------------------------------------------
+Hilangkan tanda [#] pada TLSEngine on
+Hilangkan tanda [#] pada TLSLog /var/log/proftpd/tls.log
+Hilangkan tanda [#] pada TLSProtocol SSLv23
+Hilangkan tanda [#] pada TLSRSACertificateFile /etc/ssl/certs/proftpd.crt
+Hilangkan tanda [#] pada TLSRSACertificateKeyFile /etc/ssl/private/proftpd.key
+Ganti TLSRSACertificateFile /etc/ssl/certs/proftpd.crt        ---> TLSRSACertificateFile /cert/serverone.net.crt
+Ganti TLSRSACertificateKeyFile /etc/ssl/private/proftpd.key   ---> TLSRSACertificateKeyFile /cert/serverone.net.key
+Hilangkan tanda [#] pada TLSCACertificateFile /etc/ssl/certs/CA.pem
+Ganti TLSCACertificateFile /etc/ssl/certs/CA.pem ---> TLSCACertificateFile /cert/ca.crt
+
+Ada :
+#TLSOptions NoCertRequest EnableDiags
+#TLSOptions NoCertRequest EnableDiags NoSessionReuseRequired
+
+Tambahkan di bawah nya :
+TLSOptions NoCertRequest UseImplicitSSL NoSessionReuseRequired [tanpa #]
+
+Hilangkan tanda [#] pada TLSVerifyClient off
+Hilangkan tanda [#] pada TLSRequired on
+
+[save]
+----------------------------------------------------------------------------------------------------------------------------
+nano /etc/proftpd/modules.conf
+----------------------------------------------------------------------------------------------------------------------------
+ke bagian paling bawah
+
+Beri tanda [#] di depan tulisan LoadModule mod_tls_memcache.c
+----------------------------------------------------------------------------------------------------------------------------
+service proftpd restart
+----------------------------------------------------------------------------------------------------------------------------
+adduser kelompok1
+----------------------------------------------------------------------------------------------------------------------------
+Buka FileZilla --> Navigation bar [File] --> Site Manager
+
+Masukkan User [kelompok1], Password, dan Port nya
+
+Host ftp.serverone.net
+Protocol ( FTP - File Transfer Protocol )
+Encryption Require implicit FTP over TLS
+Logon Type Normal
+
+Connect
+
+Abort previous connection and connect in current tab [OK]
+
+Certificate in chain [0]
+
+beri tanda ceklis pada checkbox [Always trust certificate in future sessions]
+
+[OK]
